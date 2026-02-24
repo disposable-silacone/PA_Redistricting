@@ -1,0 +1,235 @@
+PROJECT: PA Redistricting Fairness Pipeline (Tract simulation, Block scoring)
+AUTHOR: Dan Laporte
+PURPOSE: Cursor tech spec for building metrics (start with existing CD116 map)
+
+============================================================
+1) GOALS (MVP)
+============================================================
+
+MVP-1: Load validated block-level vote dataset and the existing CD116 district boundaries.
+MVP-2: Assign each block to a CD116 district.
+MVP-3: Aggregate block votes and population to district totals.
+MVP-4: Compute standard partisan fairness metrics for the existing map.
+MVP-5: Export outputs (district table CSV + statewide metrics JSON + optional quick plots).
+
+Note: Simulation of new maps is NOT in MVP. We’re building the scoring/metrics stack first.
+
+============================================================
+2) INPUT DATA
+============================================================
+
+2.1 Block layer (GeoPackage strongly preferred)
+- File: data/pa_blocks_votes.gpkg (example name)
+- Layer name: blocks (if multiple layers)
+- Required columns:
+  - GEOID20 (block GEOID, string length 15)
+  - block_pop (int)
+  - dem_block (float)
+  - rep_block (float)
+  - geometry (polygon)
+- Required tract columns (at least one option must be present):
+  Option A (preferred): TRACT_GEOID20 (string length 11) = STATEFP(2)+COUNTYFP(3)+TRACTCE(6)
+  Option B: STATEFP20, COUNTYFP20, TRACTCE20 (can be combined into tract GEOID)
+- Optional:
+  - VTD_GEOID20 (not needed for MVP)
+  - any QA fields
+
+2.2 District layer (CD116 for PA)
+- File: data/tl_2020_42_cd116.shp (or .gpkg)
+- Required columns:
+  - CD116FP (district code, typically string: "01".."18")
+  - geometry (polygon)
+
+============================================================
+3) ENVIRONMENT / DEPENDENCIES
+============================================================
+
+Python 3.11+
+Key packages:
+- geopandas
+- pandas
+- numpy
+- shapely
+- pyogrio (optional but recommended for faster reads)
+- matplotlib (optional for quick visuals)
+
+Performance note:
+- Block layer is large (~336k). Use a projected CRS for spatial join.
+- Prefer pyogrio engine for gpd.read_file when available.
+- Use spatial index (geopandas sjoin uses it automatically if installed properly).
+
+============================================================
+4) OUTPUTS
+============================================================
+
+4.1 District totals table (CSV)
+- outputs/district_totals_cd116.csv
+Columns:
+  - CD116FP
+  - pop_total
+  - dem_total
+  - rep_total
+  - two_party_total
+  - dem_share
+  - rep_share
+  - winner (D/R)
+  - margin (dem_share - 0.5)
+  - (optional) dem_margin_votes = dem_total - rep_total
+
+4.2 Statewide metrics (JSON)
+- outputs/metrics_cd116.json
+Contains:
+  - statewide_dem, statewide_rep, statewide_two_party, statewide_dem_share
+  - seats_dem, seats_rep, seat_share_dem
+  - efficiency_gap
+  - mean_median
+  - partisan_bias_at_50 (optional for MVP; include if implemented cleanly)
+  - declination (optional; skip unless confident)
+  - notes + timestamp
+
+4.3 Optional quick plot (PNG)
+- outputs/seat_vote_curve_cd116.png (optional)
+- outputs/district_dem_share_hist.png (optional)
+
+============================================================
+5) METHOD DETAILS (MVP IMPLEMENTATION)
+============================================================
+
+5.1 Load data
+- Read blocks into GeoDataFrame blocks_gdf
+- Read cd116 into GeoDataFrame cds_gdf
+
+5.2 Normalize CRS
+- If either layer is geographic (EPSG:4269 or EPSG:4326), project BOTH to a projected CRS.
+- Use EPSG:26918 (NAD83 / UTM zone 18N) for PA.
+- blocks_gdf = blocks_gdf.to_crs(26918)
+- cds_gdf = cds_gdf.to_crs(26918)
+
+5.3 Assign each block to a district (spatial join)
+Preferred method:
+- Use block representative points to avoid edge/intersection weirdness:
+  - blocks_pts = blocks_gdf.copy()
+  - blocks_pts["geometry"] = blocks_pts.geometry.representative_point()
+- Spatial join:
+  - joined = geopandas.sjoin(blocks_pts, cds_gdf[["CD116FP","geometry"]], predicate="within", how="left")
+- QA:
+  - assert joined["CD116FP"].notna().mean() > 0.999 (or print % missing)
+  - log any missing blocks; optionally attempt predicate="intersects" for those only
+
+5.4 Aggregate block votes to district totals
+- Group by CD116FP and sum:
+  - pop_total = sum(block_pop)
+  - dem_total = sum(dem_block)
+  - rep_total = sum(rep_block)
+- Compute:
+  - two_party_total = dem_total + rep_total
+  - dem_share = dem_total / two_party_total (handle divide by zero)
+  - rep_share = rep_total / two_party_total
+  - winner = "D" if dem_share > 0.5 else "R"
+  - seats_dem = count(winner=="D"), seats_rep likewise
+
+5.5 Compute statewide totals
+- statewide_dem = sum(dem_total) (or sum(dem_block) across blocks)
+- statewide_rep = sum(rep_total)
+- statewide_dem_share = statewide_dem / (statewide_dem + statewide_rep)
+- seat_share_dem = seats_dem / 18
+
+5.6 Fairness metrics (implement these first)
+A) Efficiency Gap (two-party)
+Definitions:
+- Total votes in district: T = D + R
+- Votes to win: W = floor(T/2) + 1 (for integer). For continuous votes, use 0.5*T threshold.
+- Wasted votes:
+  If D wins: wasted_D = D - 0.5*T, wasted_R = R
+  If R wins: wasted_R = R - 0.5*T, wasted_D = D
+Statewide EG:
+  EG = (sum(wasted_R) - sum(wasted_D)) / sum(T)
+Sign convention:
+- Positive EG => advantage for Democrats (or specify and be consistent).
+Document which convention is used in output.
+
+B) Mean-Median difference
+- Compute dem_share for each district (18 values)
+- mean_median = mean(dem_share) - median(dem_share)
+
+C) Seat-vote deviation
+- seat_vote_gap = seat_share_dem - statewide_dem_share
+
+Optional (only if clean and correct):
+D) Partisan bias at 50%
+Approach:
+- Uniform swing method:
+  - For each district dem_share_i, shift by delta = 0.5 - statewide_dem_share
+  - dem_share_i_50 = dem_share_i + delta (cap [0,1])
+  - seats_at_50 = count(dem_share_i_50 > 0.5)
+  - bias = seats_at_50/18 - 0.5
+This is a simple proxy; document that it’s uniform swing.
+
+5.7 Export results
+- Save district table as CSV
+- Save metrics as JSON
+- Optionally save dissolved district layer with totals as GeoPackage:
+  - outputs/cd116_scored.gpkg
+
+============================================================
+6) QA / VALIDATION CHECKS
+============================================================
+
+- Check that district totals produce plausible outcomes (PA 2020 CD116 had 18 seats; expect around 9/9 split).
+- Ensure sums across districts equal statewide sums within small floating tolerance:
+  abs(sum(dem_total) - sum(blocks.dem_block)) < 1e-6 * statewide_total
+- Report count of blocks not assigned to any CD:
+  missing = joined["CD116FP"].isna().sum()
+  Print missing and optionally dump those GEOID20s to outputs/missing_blocks.csv
+
+============================================================
+7) IMPLEMENTATION FILES (RECOMMENDED)
+============================================================
+
+src/config.py
+- file paths, CRS constants, output folder
+
+src/load_data.py
+- functions: load_blocks(), load_cds(), ensure_crs()
+
+src/assignments.py
+- function: assign_blocks_to_districts(blocks_gdf, cds_gdf) -> blocks_joined_df
+
+src/aggregate.py
+- function: aggregate_to_districts(blocks_joined_df) -> district_df
+
+src/metrics.py
+- functions:
+  - compute_efficiency_gap(district_df) -> float
+  - compute_mean_median(district_df) -> float
+  - compute_seat_vote_gap(district_df, statewide_share) -> float
+  - compute_uniform_swing_bias(district_df, statewide_share) -> float (optional)
+
+run_metrics_cd116.py (top-level script)
+- orchestrates the pipeline and writes outputs
+
+============================================================
+8) FUTURE EXTENSION (NOT MVP, but design for it now)
+============================================================
+
+Tract-level simulation:
+- Build tract graph where nodes=tracts and edges=adjacent tracts (rook/queen adjacency).
+- Assign tract to districts to generate alternative maps subject to:
+  - contiguity
+  - population equality (±1% or ±0.5%)
+- Then “score at block” by:
+  - joining each block to its tract
+  - mapping tract->district assignment
+  - aggregating block votes to district totals
+This reuse of scoring code is the key design constraint.
+
+============================================================
+9) QUESTIONS / ASSUMPTIONS
+============================================================
+
+- Assume district assignment is done by representative point of blocks.
+- Assume vote totals are two-party (dem_block, rep_block already two-party).
+- If block_pop has missing values, treat as 0 and log.
+- If CD116FP is numeric, cast to zero-padded string ("01".."18") for consistency.
+
+END SPEC
