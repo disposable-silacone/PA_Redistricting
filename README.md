@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # PA Redistricting Fairness Pipeline
 
 Score Pennsylvania congressional district maps on **partisan fairness**, **compactness**, and **population equality**, and optionally **generate** many legal alternative maps (contiguity + population balance) and score them.
@@ -47,3 +48,7 @@ python run_ensemble.py --steps 20 --random-start --save-plans-every 1   # more v
 - **Tech spec (MVP + extensions):** `PROJECT PA Redistricting Fairness P.txt`.
 
 **Requirements:** Python 3.11+, `geopandas`, `pandas`, `numpy`, `shapely`, `pyogrio`; for ensemble add `gerrychain`, `networkx`, `libpysal`. See `requirements.txt`.
+=======
+# PA_Redistricting
+PA congressional redistricting: score maps (fairness/compactness/pop) and generate 17/18-district ensembles with GerryChain
+>>>>>>> 5606d21d761f01b6e7e38b3b987416bd5e95cb85
