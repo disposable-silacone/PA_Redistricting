@@ -36,7 +36,7 @@ def load_blocks(path=None):
 
 def load_cds(path=None):
     """Load CD116 district boundaries into a GeoDataFrame."""
-    path = path or config.CD116_PATH
+    path = path or config.PLANS["cd116"]["path"]
     try:
         gdf = gpd.read_file(path, engine="pyogrio")
     except Exception:

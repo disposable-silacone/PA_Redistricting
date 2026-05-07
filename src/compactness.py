@@ -23,7 +23,15 @@ def compute_compactness(cds_gdf, id_col="CD116FP"):
     gdf = cds_gdf[[id_col, "geometry"]].copy()
     # Normalize ID to string for consistency
     gdf[id_col] = gdf[id_col].astype(str).str.zfill(2)
-    dissolved = gdf.dissolve(by=id_col).reset_index()
+    try:
+        dissolved = gdf.dissolve(by=id_col, method="coverage").reset_index()
+    except TypeError:
+        dissolved = gdf.dissolve(by=id_col).reset_index()
+    except Exception:
+        # Fallback for occasional union errors in some shapely/geopandas combos.
+        gdf = gdf.copy()
+        gdf["geometry"] = gdf.geometry.buffer(0)
+        dissolved = gdf.dissolve(by=id_col).reset_index()
     dissolved["_area"] = dissolved.geometry.area
     dissolved["_perimeter"] = dissolved.geometry.length
     dissolved["polsby_hopper"] = dissolved.apply(

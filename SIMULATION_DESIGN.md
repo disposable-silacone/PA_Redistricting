@@ -42,7 +42,7 @@ You need **one tract-level geography** and **population per tract**:
 Each tract (node) needs at least:
 
 - **Population** — Required for ReCom. Sum `block_pop` by tract from your block layer.
-- **Initial district assignment** — So the chain has a valid starting partition. Use CD116: for each tract, assign the CD116 district that contains the tract’s centroid (or largest overlap). That gives 18 contiguous districts with roughly equal population to start from.
+- **Initial district assignment** — So the chain has a valid starting partition. Use CD116 (tract centroid/overlap assignment) for an 18-district start, or use `--random-start` in `run_ensemble.py` to begin from a random partition.
 
 ### 3.3 Block–tract link
 

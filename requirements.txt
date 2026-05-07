@@ -5,8 +5,10 @@ shapely>=2.0.0
 pyogrio>=0.6.0
 matplotlib>=3.7.0
 # For ensemble map generation (see SIMULATION_DESIGN.md)
-gerrychain>=1.0.0
+gerrychain>=0.3.2
 networkx>=2.0
 libpysal>=4.0
 # For analysis/block_adjacency_regression.py
 statsmodels>=0.14.0
+# For Moran's I in VTD analysis
+esda>=2.0

@@ -72,7 +72,14 @@ def score_partition(blocks_gdf, tract_gdf, partition_assignment, district_col="d
     compact_gdf = compact_gdf.dropna(subset=[district_col])
     # Dissolve tracts by district for compactness
     from geopandas import GeoDataFrame
-    dissolved = compact_gdf.dissolve(by=district_col).reset_index()
+    try:
+        dissolved = compact_gdf.dissolve(by=district_col, method="coverage").reset_index()
+    except TypeError:
+        dissolved = compact_gdf.dissolve(by=district_col).reset_index()
+    except Exception:
+        compact_gdf = compact_gdf.copy()
+        compact_gdf["geometry"] = compact_gdf.geometry.buffer(0)
+        dissolved = compact_gdf.dissolve(by=district_col).reset_index()
     compact_metrics = compute_compactness(
         dissolved.rename(columns={district_col: "district_id"}),
         id_col="district_id",
@@ -98,7 +105,14 @@ def _export_plan_gpkg(tract_gdf, tract_to_dist, out_path, district_col="district
     gdf = tract_gdf.copy()
     gdf[district_col] = gdf[tract_id_col].astype(str).map(tract_to_dist)
     gdf = gdf.dropna(subset=[district_col])
-    dissolved = gdf.dissolve(by=district_col).reset_index()
+    try:
+        dissolved = gdf.dissolve(by=district_col, method="coverage").reset_index()
+    except TypeError:
+        dissolved = gdf.dissolve(by=district_col).reset_index()
+    except Exception:
+        gdf = gdf.copy()
+        gdf["geometry"] = gdf.geometry.buffer(0)
+        dissolved = gdf.dissolve(by=district_col).reset_index()
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     dissolved.to_crs(4326).to_file(out_path, driver="GPKG")
@@ -110,7 +124,7 @@ def main():
     parser.add_argument("--steps", type=int, default=3000, help="Number of ReCom steps (plans) to generate")
     parser.add_argument("--epsilon", type=float, default=0.01, help="Population tolerance (e.g. 0.01 = ±1%%)")
     parser.add_argument("--out", type=Path, default=None, help="Output CSV path (default: outputs/ensemble_metrics.csv)")
-    parser.add_argument("--save-plans-every", type=int, default=0, help="Save tract→district CSV every N plans (0 = do not save)")
+    parser.add_argument("--save-plans-every", type=int, default=0, help="Save tract-to-district CSV every N plans (0 = do not save)")
     parser.add_argument("--export-geopackage", type=int, default=0, metavar="N", help="Export every Nth plan as district polygons to outputs/ensemble_plans/plan_*.gpkg for QGIS (0 = do not export)")
     parser.add_argument("--random-start", action="store_true", help="Start from a random partition instead of CD116 for much more variation (first plan can look very different)")
     parser.add_argument("--num-districts", type=int, default=18, metavar="N", help="Number of districts (default: 18). For 17 (post-2020 PA) use --num-districts 17 and --random-start.")

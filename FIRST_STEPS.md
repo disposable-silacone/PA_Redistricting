@@ -93,7 +93,7 @@ Based on the tech spec (PROJECT PA Redistricting Fairness P.txt), here is a prop
 The pipeline is keyed by **map_id**. Each run produces outputs tagged with that id; the metrics JSON includes `"map_id"` so you can tell which map each file describes.
 
 1. **Add the CD113 shapefile**  
-   Download the Census TIGER shapefile for PA CD113 (e.g. `tl_rd13_42_cd113.zip`), unzip it into `data/`, so you have `data/tl_rd13_42_cd113.shp` (and `.shx`, `.dbf`, etc.). The config already has a `cd113` plan pointing at that path and `CD113FP` as the district column.
+   Put the CD113 shapefile in `data/` as `data/tl_2020_42_cd113.shp` (plus `.shx`, `.dbf`, etc.), or update the `cd113` path in `src/config.py` to match your filename. The `cd113` plan uses `CD113FP` as the district column.
 
 2. **Run both maps**  
    - CD116 (default): `python run_metrics_cd116.py` or `python run_metrics_cd116.py cd116`  

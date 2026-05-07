@@ -24,7 +24,14 @@ def tract_geoms_from_blocks(blocks_gdf, tract_col="TRACT_GEOID20"):
         raise ValueError(f"Block layer missing tract column: {tract_col}")
     gdf = blocks_gdf[[tract_col, "geometry"]].copy()
     gdf[tract_col] = gdf[tract_col].astype(str)
-    tract_gdf = gdf.dissolve(by=tract_col).reset_index()
+    try:
+        tract_gdf = gdf.dissolve(by=tract_col, method="coverage").reset_index()
+    except TypeError:
+        tract_gdf = gdf.dissolve(by=tract_col).reset_index()
+    except Exception:
+        gdf = gdf.copy()
+        gdf["geometry"] = gdf.geometry.buffer(0)
+        tract_gdf = gdf.dissolve(by=tract_col).reset_index()
     return tract_gdf
 
 
